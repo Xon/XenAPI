@@ -1259,7 +1259,7 @@ class RestAPI {
                 }
 
                 // Try to grab the post from XenForo.
-                $post = $this->getXenAPI()->getPost($this->getRequest('post_id'), array(), $this->getUser());
+                $post = $this->getXenAPI()->getPost($this->getRequest('post_id'), array());
                 if ($post == NULL) {
                      // Could not find the post, throw error.
                     $this->throwError(19, 'post', $this->getRequest('post_id'));
@@ -1333,7 +1333,7 @@ class RestAPI {
                     $this->throwError(1, 'post_id');
                 }
 
-                $post = $this->getXenAPI()->getPost($this->getRequest('post_id'), array(), $this->getUser());
+                $post = $this->getXenAPI()->getPost($this->getRequest('post_id'), array());
                 if ($post === NULL) {
                      // Could not find the post, throw error.
                     $this->throwError(19, 'post', $this->getRequest('post_id'));
@@ -4397,10 +4397,48 @@ class XenAPI {
         return FALSE;
     }
 
+    public function getParsedPost(XenForo_BbCode_Formatter_Base $formatter, array $post)
+    {
+        $bbCodeCacheVersion = XenForo_Application::getOptions()->bbCodeCacheVersion;
+        $parser = XenForo_BbCode_Parser::create($formatter);
+        if (XenForo_Application::getOptions()->cacheBbCodeTree)
+        {
+            $tree = null;
+            
+            if (!empty($post['message_parsed']))
+            {
+                $tree = @unserialize($post['message_parsed']);
+            }
+            
+            if (empty($tree))
+            {
+                $tree = $parser->parse($post['message']);
+
+                XenForo_Application::getDb()->query('
+                    INSERT INTO xf_bb_code_parse_cache
+                        (content_type, content_id, parse_tree, cache_version, cache_date)
+                    VALUES (?, ?, ?, ?, ?)
+                    ON DUPLICATE KEY UPDATE parse_tree = VALUES(parse_tree),
+                        cache_version = VALUES(cache_version),
+                        cache_date = VALUES(cache_date)
+                ', array(
+                    'post', $post['post_id'],
+                    serialize($tree), $bbCodeCacheVersion, XenForo_Application::$time
+                ));
+            }
+
+            return $parser->render($tree);
+        }
+        else
+        {
+            return $parser->render($post['message']);
+        }
+    }
+
     /**
     * Returns the Post array of the $post_id parameter.
     */
-    public function getPost($post_id, $fetchOptions = array()) {
+    public function getPost($post_id, $fetchOptions = array(), $parsePost = null) {
         $this->getModels()->checkModel('post', XenForo_Model::create('XenForo_Model_Post'));
         $post = $this->getModels()->getModel('post')->getPostById($post_id, $fetchOptions);
         if (!empty($fetchOptions['join'])) {
@@ -4408,12 +4446,10 @@ class XenAPI {
             Post::stripThreadValues($post);
         }
 
-        if ($post !== FALSE && $post !== NULL) {
+        if ($post !== FALSE && $post !== NULL && $parsePost) {
             // Add HTML as well
             $formatter = XenForo_BbCode_Formatter_Base::create();
-            $parser = new XenForo_BbCode_Parser($formatter);
-            $post['message_html'] = str_replace("\n", '', $parser->render($post['message']));
-
+            $post['message_html'] = str_replace("\n", '', $this->getParsedPost($formatter, $post));
             $post['absolute_url'] = self::getBoardURL('posts', $post['post_id']);
         } else {
             $post = NULL;
@@ -4507,9 +4543,8 @@ class XenAPI {
             if ($post !== FALSE && $post !== NULL) {
                 // Add HTML as well
                 $formatter = XenForo_BbCode_Formatter_Base::create();
-                $parser = new XenForo_BbCode_Parser($formatter);
-                $post['message_html'] = str_replace("\n", '', $parser->render($post['message']));
-
+                $parser = XenForo_BbCode_Parser::create($formatter);
+                $post['message_html'] = str_replace("\n", '', $this->getParsedPost($formatter, $post));
                 $post['absolute_url'] = self::getBoardURL('posts', $post['post_id']);
             } else {
                 $post = NULL;
@@ -4529,7 +4564,7 @@ class XenAPI {
             $post = $this->getPost($post['post_id'], array(
                 'permissionCombinationId' => $user->data['permission_combination_id'],
                 'join' => XenForo_Model_Post::FETCH_FORUM
-            ));
+            ), false);
 
             // Unserialize the permissions.
             $permissions = XenForo_Permission::unserializePermissions($post['node_permission_cache']);
