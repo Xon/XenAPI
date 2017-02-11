@@ -245,7 +245,7 @@ class RestAPI {
             if (!$this->grab_as->isRegistered()) {
                 // Throw error if the 'grab_as' user is not registered.
                 $this->throwError(4, 'user', $this->getRequest('grab_as'));
-                break;
+                return;
             }
         }
         // Check if order by argument is set.
@@ -472,12 +472,12 @@ class RestAPI {
             if (!$this->getRequest('order_by')) {
                 // Throw error if the 'order_by' argument is set but empty.
                 $this->throwError(1, 'order_by');
-                break;
+                return FALSE;
             } 
             if (!in_array(strtolower($this->getRequest('order_by')), $order_by_array)) {
                 // Throw error if the 'order_by' argument is set but could not be found in list of allowed order_by.
                 $this->throwError(22, $this->getRequest('order_by'), implode(', ', $order_by_array));
-                break;
+                return FALSE;
             }
             return strtolower($this->getRequest('order_by'));
         }
@@ -748,14 +748,14 @@ class RestAPI {
                 if (!$this->getRequest('value')) {
                     // Throw error if the 'value' argument is set but empty.
                     $this->throwError(1, 'value');
-                    break;
+                    return;
                 }
                 // Create a user variable with the 'value' argument.
                 $user = $this->xenAPI->getUser($this->getRequest('value'));
                 if (!$user->isRegistered()) {
                     // Throw error if the 'value' user is not registered.
                     $this->throwError(4, 'user', $this->getRequest('value'));
-                    break;
+                    return;
                 }
             } else if ($this->hasRequest('hash')) {
                 // The 'value' argument was not set, check if hash is an API key.
@@ -771,7 +771,7 @@ class RestAPI {
             } else {
                 // Nor the 'value' argument or the 'hash' argument has been set, throw error.
                 $this->throwError(3, 'value');
-                break;
+                return;
             }
         }
     
